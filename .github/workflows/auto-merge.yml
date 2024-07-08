@@ -1,0 +1,60 @@
+name: Update staging Branch
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+jobs:
+  merge_to_stg:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-20.04
+
+    steps:
+    - name: Checkout the repository
+      uses: actions/checkout@v3
+
+    - name: Set up SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.AUTH_GITHUB }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan github.com >> ~/.ssh/known_hosts
+      shell: bash
+
+    - name: Fetch all branches
+      run: git fetch --all
+
+    - name: Configure git
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+    - name: Merge main into staging
+      id: merge
+      run: |
+        git checkout staging
+        git merge main --no-ff --allow-unrelated-histories --commit -m "Merge main into staging"
+      continue-on-error: true
+      shell: bash
+
+    - name: Push changes
+      if: steps.merge.outcome == 'success'
+      run: git push origin staging
+      shell: bash
+
+    - name: Create pull request on merge conflict
+      if: steps.merge.outcome == 'failure'
+      run: |
+        git checkout -b merge-main-into-staging
+        git push origin merge-main-into-staging
+        gh pr create --base staging --head merge-main-into-staging --title "Resolve Merge Conflicts: Main into Staging" --body "This PR resolves merge conflicts between the main and staging branches."
+      shell: bash
+
+    - name: Clean up SSH
+      if: always()
+      run: |
+        rm -f ~/.ssh/id_rsa
+        rm -f ~/.ssh/known_hosts
+      shell: bash
